@@ -108,67 +108,68 @@
             const actions_taken = document.getElementById('actions_taken').value;
             const loan_purposes = document.getElementById('loan_purposes').value;
             const leis = document.getElementById('leis').value;
-
+    
             const progressBar = document.getElementById('progress-bar');
             progressBar.value = 0;
             const totalYears = years.length;
             let completedYears = 0;
-
+    
             combinedResults = {};
-
+    
             for (const year of years) {
-                const proxyUrl = `http://localhost:3000/proxy?year=${year}&counties=${counties}&actions_taken=${actions_taken}&loan_purposes=${loan_purposes}&leis=${leis}`;
+                const apiUrl = `https://ffiec.cfpb.gov/v2/data-browser-api/view/csv?year=${year}&counties=${counties}&actions_taken=${actions_taken}&loan_purposes=${loan_purposes}&leis=${leis}`;
+                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}`;
                 console.log(proxyUrl);
                 try {
                     const response = await fetch(proxyUrl);
                     if (!response.ok) throw new Error('Network response was not ok');
-
+    
                     const reader = response.body.getReader();
                     const contentLength = response.headers.get('Content-Length');
                     let receivedLength = 0;
                     let chunks = [];
-
+    
                     while (true) {
                         const { done, value } = await reader.read();
                         if (done) break;
                         chunks.push(value);
                         receivedLength += value.length;
-
+    
                         if (contentLength) {
                             progressBar.value = ((receivedLength / contentLength) + completedYears) / totalYears * 100;
                         } else {
                             progressBar.value = ((receivedLength / (receivedLength + 1)) + completedYears) / totalYears * 100; // Fallback method
                         }
                     }
-
+    
                     const blob = new Blob(chunks, { type: 'text/csv' });
                     const text = await blob.text();
                     const csvData = parseCSV(text);
-
+    
                     // Separate analysis for target LEI and other LEIs
                     const targetLeiData = csvData.filter(entry => entry.lei === leis);
                     const otherLeiData = csvData.filter(entry => entry.lei !== leis);
-
+    
                     const targetLeiAnalysis = generateMarketAnalysis(targetLeiData, year, leis);
                     const otherLeiAnalysis = generateMarketAnalysis(otherLeiData, year, 'All Other Lenders');
-
+    
                     combinedResults[year] = {
                         targetLei: targetLeiAnalysis,
                         otherLei: otherLeiAnalysis
                     };
-
+    
                     completedYears += 1;
                     progressBar.value = (completedYears / totalYears) * 100;
                 } catch (error) {
                     document.getElementById('results').textContent = 'Error fetching data: ' + error;
                 }
             }
-
+    
             displayCombinedResults(combinedResults);
             document.getElementById('download-csv').style.display = 'block';
             document.getElementById('results').textContent = 'Analysis generated and displayed successfully';
         }
-
+        
         function parseCSV(text) {
             const lines = text.split('\n');
             const headers = lines[0].split(',').map(header => header.trim());
