@@ -117,7 +117,7 @@
             combinedResults = {};
     
             for (const year of years) {
-                const apiUrl = `https://ffiec.cfpb.gov/v2/data-browser-api/view/csv?years=${years}&counties=${counties}&actions_taken=${actions_taken}&loan_purposes=${loan_purposes}&leis=${leis}`;
+                const apiUrl = `https://ffiec.cfpb.gov/v2/data-browser-api/view/csv?years=${year}&counties=${counties}&actions_taken=${actions_taken}&loan_purposes=${loan_purposes}&leis=${leis}`;
                 const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}`;
                 console.log(proxyUrl);
                 try {
@@ -311,12 +311,12 @@
                 }
 
                 // Female Only: applicant_sex = '2' AND co_applicant_sex != '1' OR co_applicant_sex = '2' AND applicant_sex != '1'
-                if ((entry['applicant_sex'] === '2' && entry['co_applicant_sex'] !== '1') || (entry['co_applicant_sex'] === '2' && entry['applicant_sex'] !== '1')) {
+                if ((entry['applicant_sex'] === '2' && entry['co-applicant_sex'] !== '1') || (entry['co-applicant_sex'] === '2' && entry['applicant_sex'] !== '1')) {
                     category.femaleOnly += 1;
                 }
 
                 // Same Sex: applicant_sex = co_applicant_sex AND both are < 3
-                if (parseInt(entry['applicant_sex']) < 3 && parseInt(entry['co_applicant_sex']) < 3 && entry['applicant_sex'] === entry['co_applicant_sex']) {
+                if (parseInt(entry['applicant_sex']) < 3 && parseInt(entry['co-applicant_sex']) < 3 && entry['applicant_sex'] === entry['co-applicant_sex']) {
                     category.sameSex += 1;
                 }
             });
