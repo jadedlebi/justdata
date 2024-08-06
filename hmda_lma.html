@@ -117,7 +117,7 @@
             combinedResults = {};
     
             for (const year of years) {
-                const apiUrl = `https://ffiec.cfpb.gov/v2/data-browser-api/view/csv?year=${year}&counties=${counties}&actions_taken=${actions_taken}&loan_purposes=${loan_purposes}&leis=${leis}`;
+                const apiUrl = `https://ffiec.cfpb.gov/v2/data-browser-api/view/csv?years=${years}&counties=${counties}&actions_taken=${actions_taken}&loan_purposes=${loan_purposes}&leis=${leis}`;
                 const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}`;
                 console.log(proxyUrl);
                 try {
