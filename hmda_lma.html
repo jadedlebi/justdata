@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HMDA Local Market Analysis</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        label {
+            display: block;
+            margin-top: 10px;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            margin-top: 5px;
+        }
+        button {
+            margin-top: 20px;
+            padding: 10px;
+        }
+        progress {
+            width: 100%;
+            margin-top: 20px;
+        }
+        pre {
+            background-color: #f4f4f4;
+            padding: 10px;
+            border: 1px solid #ddd;
+            margin-top: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 style="text-align:center">HMDA Local Market Analysis</h1>
+        <form id="hmda-form">
+            <label for="leis">LEI:</label>
+            <input type="text" id="leis" name="leis" placeholder="e.g. KB1H1DSPRFMYMCUFXT09" required oninput="filterLEIList()">
+            <datalist id="lei-list"></datalist>
+
+            <label for="years">Years:</label>
+            <input type="text" id="years" name="years" placeholder="e.g. 2021,2022,2023" required>
+
+            <label for="counties">Counties:</label>
+            <input type="text" id="counties" name="counties" placeholder="e.g. 36001,36002" required>
+
+            <label for="actions_taken">Actions Taken:</label>
+            <input type="text" id="actions_taken" name="actions_taken" placeholder="e.g. 1,5" required>
+
+            <label for="loan_purposes">Loan Purpose:</label>
+            <input type="text" id="loan_purposes" name="loan_purposes" placeholder="e.g. 1,2,31,32,4" required>
+
+            <button type="button" onclick="fetchHMDAData()">Query HMDA Data</button>
+        </form>
+        <progress id="progress-bar" value="0" max="100"></progress>
+        <div id="results"></div>
+        <button id="download-csv" style="display:none;" onclick="downloadCSV()">Download CSV</button>
+    </div>
+
+    <script>
+        let combinedResults = {};
+        let lenderDisplayList = [];
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Fetch the LEI list from the server
+            const response = await fetch('https://raw.githubusercontent.com/jadedlebi/justdata/main/hmda_lenders18.csv');
+            const text = await response.text();
+            const rows = text.split('\n');
+            lenderDisplayList = rows.map(row => row.split(',')[1]).filter((item, index) => index > 0 && item);
+        });
+
+        function filterLEIList() {
+            const input = document.getElementById('leis').value.toLowerCase();
+            const datalist = document.getElementById('lei-list');
+            datalist.innerHTML = '';
+            const filteredList = lenderDisplayList.filter(lei => lei.toLowerCase().includes(input));
+            filteredList.forEach(lei => {
+                const option = document.createElement('option');
+                option.value = lei;
+                datalist.appendChild(option);
+            });
+        }
+
+        async function fetchHMDAData() {
+            const years = document.getElementById('years').value.split(',').map(year => year.trim());
+            const counties = document.getElementById('counties').value;
+            const actions_taken = document.getElementById('actions_taken').value;
+            const loan_purposes = document.getElementById('loan_purposes').value;
+            const leis = document.getElementById('leis').value;
+
+            const progressBar = document.getElementById('progress-bar');
+            progressBar.value = 0;
+            const totalYears = years.length;
+            let completedYears = 0;
+
+            combinedResults = {};
+
+            for (const year of years) {
+                const proxyUrl = `http://localhost:3000/proxy?year=${year}&counties=${counties}&actions_taken=${actions_taken}&loan_purposes=${loan_purposes}&leis=${leis}`;
+                console.log(proxyUrl);
+                try {
+                    const response = await fetch(proxyUrl);
+                    if (!response.ok) throw new Error('Network response was not ok');
+
+                    const reader = response.body.getReader();
+                    const contentLength = response.headers.get('Content-Length');
+                    let receivedLength = 0;
+                    let chunks = [];
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        chunks.push(value);
+                        receivedLength += value.length;
+
+                        if (contentLength) {
+                            progressBar.value = ((receivedLength / contentLength) + completedYears) / totalYears * 100;
+                        } else {
+                            progressBar.value = ((receivedLength / (receivedLength + 1)) + completedYears) / totalYears * 100; // Fallback method
+                        }
+                    }
+
+                    const blob = new Blob(chunks, { type: 'text/csv' });
+                    const text = await blob.text();
+                    const csvData = parseCSV(text);
+
+                    // Separate analysis for target LEI and other LEIs
+                    const targetLeiData = csvData.filter(entry => entry.lei === leis);
+                    const otherLeiData = csvData.filter(entry => entry.lei !== leis);
+
+                    const targetLeiAnalysis = generateMarketAnalysis(targetLeiData, year, leis);
+                    const otherLeiAnalysis = generateMarketAnalysis(otherLeiData, year, 'All Other Lenders');
+
+                    combinedResults[year] = {
+                        targetLei: targetLeiAnalysis,
+                        otherLei: otherLeiAnalysis
+                    };
+
+                    completedYears += 1;
+                    progressBar.value = (completedYears / totalYears) * 100;
+                } catch (error) {
+                    document.getElementById('results').textContent = 'Error fetching data: ' + error;
+                }
+            }
+
+            displayCombinedResults(combinedResults);
+            document.getElementById('download-csv').style.display = 'block';
+            document.getElementById('results').textContent = 'Analysis generated and displayed successfully';
+        }
+
+        function parseCSV(text) {
+            const lines = text.split('\n');
+            const headers = lines[0].split(',').map(header => header.trim());
+            const data = lines.slice(1).map(line => {
+                const values = line.split(',');
+                if (values.length !== headers.length) {
+                    return null;
+                }
+                const entry = {};
+                headers.forEach((header, index) => {
+                    entry[header] = values[index] ? values[index].trim() : null;
+                });
+                return entry;
+            }).filter(entry => entry !== null);
+            return data;
+        }
+
+        function generateMarketAnalysis(data, year, lei) {
+            const analysis = {
+                year: year,
+                lei: lei,
+                homePurchase: {
+                    allLoans: 0,
+                    lmiT: 0,
+                    lmiB: 0,
+                    minT: 0,
+                    minB: 0,
+                    hispanic: 0,
+                    nativeAmerican: 0,
+                    asian: 0,
+                    black: 0,
+                    hoPI: 0,
+                    white: 0,
+                    noData: 0,
+                    femaleOnly: 0,
+                    sameSex: 0
+                },
+                cashOutRefiAndRefinance: {
+                    allLoans: 0,
+                    lmiT: 0,
+                    lmiB: 0,
+                    minT: 0,
+                    minB: 0,
+                    hispanic: 0,
+                    nativeAmerican: 0,
+                    asian: 0,
+                    black: 0,
+                    hoPI: 0,
+                    white: 0,
+                    noData: 0,
+                    femaleOnly: 0,
+                    sameSex: 0
+                },
+                homeImprovementAndHomeEquity: {
+                    allLoans: 0,
+                    lmiT: 0,
+                    lmiB: 0,
+                    minT: 0,
+                    minB: 0,
+                    hispanic: 0,
+                    nativeAmerican: 0,
+                    asian: 0,
+                    black: 0,
+                    hoPI: 0,
+                    white: 0,
+                    noData: 0,
+                    femaleOnly: 0,
+                    sameSex: 0
+                }
+            };
+
+            data.forEach(entry => {
+                const loanPurpose = parseInt(entry['loan_purpose']);
+                let category;
+
+                if (loanPurpose === 1) {
+                    category = analysis.homePurchase;
+                } else if (loanPurpose === 31 || loanPurpose === 32) {
+                    category = analysis.cashOutRefiAndRefinance;
+                } else if (loanPurpose === 2 || loanPurpose === 4) {
+                    category = analysis.homeImprovementAndHomeEquity;
+                } else {
+                    return;
+                }
+
+                // Count all loans
+                category.allLoans += 1;
+
+                // LMIT: if tract_to_msa_income_percentage >= 80 then 1 else 0
+                const tractIncomePercentage = parseFloat(entry['tract_to_msa_income_percentage']);
+                if (tractIncomePercentage >= 80) {
+                    category.lmiT += 1;
+                }
+
+                // LMIB: if (income*1000)/ffiec_msa_md_median_family_income <= 0.8 then 1 else 0
+                const income = parseFloat(entry['income']) * 1000;
+                const medianFamilyIncome = parseFloat(entry['ffiec_msa_md_median_family_income']);
+                if ((income / medianFamilyIncome) <= 0.8) {
+                    category.lmiB += 1;
+                }
+
+                // MINT: if tract_minority_population_percent >= 50 then 1 else 0
+                const minorityPopulationPercent = parseFloat(entry['tract_minority_population_percent']);
+                if (minorityPopulationPercent >= 50) {
+                    category.minT += 1;
+                }
+
+                // Calculate combined_race_ethnicity
+                const combinedRaceEthnicity = getCombinedRaceEthnicity(entry);
+
+                // MINB: if combined_race_ethnicity != 'White' then 1 else 0
+                if (combinedRaceEthnicity !== 'White' && combinedRaceEthnicity !== 'No Data') {
+                    category.minB += 1;
+                }
+
+                // Count each race/ethnicity
+                switch (combinedRaceEthnicity) {
+                    case 'Hispanic':
+                        category.hispanic += 1;
+                        break;
+                    case 'Native American':
+                        category.nativeAmerican += 1;
+                        break;
+                    case 'Asian':
+                        category.asian += 1;
+                        break;
+                    case 'Black':
+                        category.black += 1;
+                        break;
+                    case 'HoPI':
+                        category.hoPI += 1;
+                        break;
+                    case 'White':
+                        category.white += 1;
+                        break;
+                    case 'No Data':
+                        category.noData += 1;
+                        break;
+                }
+
+                // Female Only: applicant_sex = '2' AND co_applicant_sex != '1' OR co_applicant_sex = '2' AND applicant_sex != '1'
+                if ((entry['applicant_sex'] === '2' && entry['co_applicant_sex'] !== '1') || (entry['co_applicant_sex'] === '2' && entry['applicant_sex'] !== '1')) {
+                    category.femaleOnly += 1;
+                }
+
+                // Same Sex: applicant_sex = co_applicant_sex AND both are < 3
+                if (parseInt(entry['applicant_sex']) < 3 && parseInt(entry['co_applicant_sex']) < 3 && entry['applicant_sex'] === entry['co_applicant_sex']) {
+                    category.sameSex += 1;
+                }
+            });
+
+            return analysis;
+        }
+
+        function getCombinedRaceEthnicity(entry) {
+            // Determine ethnicity
+            const applicantEthnicity = [
+                entry['applicant_ethnicity-1'],
+                entry['applicant_ethnicity-2'],
+                entry['applicant_ethnicity-3'],
+                entry['applicant_ethnicity-4'],
+                entry['applicant_ethnicity-5']
+            ].map(code => parseInt(code)).filter(code => !isNaN(code) && code > 0);
+
+            const ethnicity = applicantEthnicity.length > 0 ? applicantEthnicity[0] : 0;
+
+            // Determine race
+            const applicantRace = [
+                entry['applicant_race-1'],
+                entry['applicant_race-2'],
+                entry['applicant_race-3'],
+                entry['applicant_race-4'],
+                entry['applicant_race-5']
+            ].map(code => parseInt(code)).filter(code => !isNaN(code) && code > 0);
+
+            const race = applicantRace.length > 0 ? applicantRace[0] : 0;
+
+            if (ethnicity === 1 || ethnicity > 10) {
+                return 'Hispanic';
+            } else if (race === 1) {
+                return 'Native American';
+            } else if (race === 2 || (race > 20 && race < 30)) {
+                return 'Asian';
+            } else if (race === 3) {
+                return 'Black';
+            } else if (race === 4 || race > 40) {
+                return 'HoPI';
+            } else if (race === 5) {
+                return 'White';
+            } else {
+                return 'No Data';
+            }
+        }
+
+        function displayCombinedResults(allData) {
+            const resultsContainer = document.getElementById('results');
+            const section = document.createElement('div');
+            const heading = document.createElement('h2');
+            heading.textContent = 'Combined Results';
+            section.appendChild(heading);
+
+            const table = document.createElement('table');
+            const thead = document.createElement('thead');
+            const tbody = document.createElement('tbody');
+            table.appendChild(thead);
+            table.appendChild(tbody);
+
+            // Create table headers
+            const headerRow = document.createElement('tr');
+            const headers = ['Loan Purpose', 'Year', 'LEI', 'All Loans', 'LMIT Loans', 'LMIB Loans', 'MINT Loans', 'MINB Loans', 'Hispanic', 'Native American', 'Asian', 'Black', 'HoPI', 'White', 'No Data', 'Female Only', 'Same Sex'];
+            headers.forEach(header => {
+                const headerCell = document.createElement('th');
+                headerCell.textContent = header;
+                headerRow.appendChild(headerCell);
+            });
+            thead.appendChild(headerRow);
+
+            // Create table rows
+            Object.keys(allData).forEach(year => {
+                const data = allData[year];
+
+                ['targetLei', 'otherLei'].forEach(type => {
+                    const leiData = data[type];
+                    const loanPurposes = ['homePurchase', 'cashOutRefiAndRefinance', 'homeImprovementAndHomeEquity'];
+                    const loanPurposeNames = ['Home Purchase', 'Cash Out Refi & Refinance', 'Home Improvement & Home Equity'];
+
+                    loanPurposes.forEach((purpose, index) => {
+                        const category = leiData[purpose];
+                        const row = document.createElement('tr');
+
+                        const loanPurposeCell = document.createElement('td');
+                        loanPurposeCell.textContent = loanPurposeNames[index];
+                        row.appendChild(loanPurposeCell);
+
+                        const yearCell = document.createElement('td');
+                        yearCell.textContent = year;
+                        row.appendChild(yearCell);
+
+                        const leiCell = document.createElement('td');
+                        leiCell.textContent = leiData.lei;
+                        row.appendChild(leiCell);
+
+                        const rowData = [
+                            category.allLoans,
+                            category.lmiT,
+                            category.lmiB,
+                            category.minT,
+                            category.minB,
+                            category.hispanic,
+                            category.nativeAmerican,
+                            category.asian,
+                            category.black,
+                            category.hoPI,
+                            category.white,
+                            category.noData,
+                            category.femaleOnly,
+                            category.sameSex
+                        ];
+
+                        rowData.forEach(value => {
+                            const cell = document.createElement('td');
+                            cell.textContent = value;
+                            row.appendChild(cell);
+                        });
+
+                        tbody.appendChild(row);
+                    });
+                });
+            });
+
+            section.appendChild(table);
+            resultsContainer.appendChild(section);
+        }
+
+        function downloadCSV() {
+            const headers = ['Loan Purpose', 'Year', 'LEI', 'All Loans', 'LMIT Loans', 'LMIB Loans', 'MINT Loans', 'MINB Loans', 'Hispanic', 'Native American', 'Asian', 'Black', 'HoPI', 'White', 'No Data', 'Female Only', 'Same Sex'];
+            const rows = [];
+
+            Object.keys(combinedResults).forEach(year => {
+                const data = combinedResults[year];
+
+                ['targetLei', 'otherLei'].forEach(type => {
+                    const leiData = data[type];
+                    const loanPurposes = ['homePurchase', 'cashOutRefiAndRefinance', 'homeImprovementAndHomeEquity'];
+                    const loanPurposeNames = ['Home Purchase', 'Cash Out Refi & Refinance', 'Home Improvement & Home Equity'];
+
+                    loanPurposes.forEach((purpose, index) => {
+                        const category = leiData[purpose];
+                        rows.push([
+                            loanPurposeNames[index],
+                            year,
+                            leiData.lei,
+                            category.allLoans,
+                            category.lmiT,
+                            category.lmiB,
+                            category.minT,
+                            category.minB,
+                            category.hispanic,
+                            category.nativeAmerican,
+                            category.asian,
+                            category.black,
+                            category.hoPI,
+                            category.white,
+                            category.noData,
+                            category.femaleOnly,
+                            category.sameSex
+                        ].join(','));
+                    });
+                });
+            });
+
+            const csvContent = [
+                headers.join(','),
+                ...rows
+                ].join('\n');
+
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const downloadUrl = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+            a.download = 'combined_results.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+    </script>
+</body>
+</html>
+
