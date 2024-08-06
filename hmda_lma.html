@@ -118,7 +118,7 @@
     
             for (const year of years) {
                 const apiUrl = `https://ffiec.cfpb.gov/v2/data-browser-api/view/csv?years=${year}&counties=${counties}&actions_taken=${actions_taken}&loan_purposes=${loan_purposes}&leis=${leis}`;
-                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}`;
+                const proxyUrl = `https://cors-anywhere.herokuapp.com/${apiUrl}`;
                 console.log(proxyUrl);
                 try {
                     const response = await fetch(proxyUrl);
