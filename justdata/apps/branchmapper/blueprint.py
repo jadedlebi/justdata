@@ -15,6 +15,9 @@ from justdata.shared.utils.unified_env import get_unified_config
 from .config import TEMPLATES_DIR, STATIC_DIR
 from .version import __version__
 
+# FDIC BankFind Suite has required an API key on every request since 2026-09-08
+FDIC_API_KEY = os.environ.get('FDIC_API_KEY', '')
+
 # Import utilities from branchmapper's own modules
 from .data_utils import (
     get_available_counties, get_available_states,
@@ -889,6 +892,8 @@ def api_oscr_events():
         'sort_order': 'DESC',
         'limit': 10000
     }
+    if FDIC_API_KEY:
+        params['api_key'] = FDIC_API_KEY
 
     try:
         resp = http_requests.get(fdic_url, params=params, timeout=30)
@@ -1088,6 +1093,8 @@ def api_oscr_events_by_bank():
         'sort_order': 'DESC',
         'limit': 10000
     }
+    if FDIC_API_KEY:
+        params['api_key'] = FDIC_API_KEY
 
     try:
         resp = http_requests.get(fdic_url, params=params, timeout=30)
@@ -1161,6 +1168,8 @@ def api_oscr_events_in_bounds():
             'sort_order': 'DESC',
             'limit': 10000
         }
+        if FDIC_API_KEY:
+            params['api_key'] = FDIC_API_KEY
         try:
             resp = http_requests.get(fdic_url, params=params, timeout=30)
             resp.raise_for_status()
