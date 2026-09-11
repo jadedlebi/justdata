@@ -173,7 +173,8 @@ def _create_notes_sheet(
     row += 1
 
     ws.cell(row, 1, "Baseline Years for Goals Calculations:")
-    ws.cell(row, 2, f"Baseline formulas use data from years {hmda_years_str} (2-year average).")
+    hmda_num_years = len(years_hmda) if years_hmda else 2
+    ws.cell(row, 2, f"Baseline formulas use data from years {hmda_years_str} ({hmda_num_years}-year average).")
     row += 2
 
     # Small Business Methodology Section

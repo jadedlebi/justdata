@@ -563,7 +563,7 @@ def _perform_analysis(job_id, form_data):
         update_progress(job_id, {'percent': 10, 'step': 'Mapping counties to GEOIDs...', 'done': False, 'error': None})
 
         # Map counties to GEOIDs and enrich with metadata
-        map_counties_to_geoids, enrich_counties_with_metadata = _import_local_module('county_mapper', 'map_counties_to_geoids', 'enrich_counties_with_metadata')
+        map_counties_to_geoids, enrich_counties_with_metadata, expand_connecticut_geoids = _import_local_module('county_mapper', 'map_counties_to_geoids', 'enrich_counties_with_metadata', 'expand_connecticut_geoids')
 
         # If using national data, get all US counties from BigQuery
         if use_national_data:
@@ -607,6 +607,13 @@ def _perform_analysis(job_id, form_data):
         else:
             acquirer_geoids, acquirer_unmapped = map_counties_to_geoids(acquirer_counties)
             target_geoids, target_unmapped = map_counties_to_geoids(target_counties)
+
+            # Expand any Connecticut geoid to both the legacy-county and planning-region
+            # vintage, since NCRC's tables aren't all vintage-consistent for CT (e.g.
+            # bizsight.sb_county_summary is legacy-coded through 2023, planning-region-coded
+            # from 2024) -- a single-vintage filter list silently drops CT for the other years.
+            acquirer_geoids = expand_connecticut_geoids(acquirer_geoids)
+            target_geoids = expand_connecticut_geoids(target_geoids)
 
             # Enrich counties with full metadata (state_name, county_name, geoid5, cbsa_code, cbsa_name)
             acquirer_counties_enriched = enrich_counties_with_metadata(acquirer_counties, acquirer_geoids)

@@ -10,6 +10,46 @@ from typing import List, Dict, Tuple, Optional, Union
 from justdata.shared.utils.bigquery_client import get_bigquery_client, execute_query
 from justdata.apps.mergermeter.config import PROJECT_ID
 
+# Connecticut eliminated county government in 1960 but federal data systems kept using
+# county FIPS codes (09001-09015) until the 2024 activity year, when HMDA/CRA reporting
+# switched to the state's 9 planning regions (09110-09190). NCRC's own BigQuery tables
+# straddle both vintages: bizsight.sb_county_summary is legacy-county-coded through 2023
+# and planning-region-coded from 2024 on, so a geoid5 filter list built from only one
+# vintage silently drops or misses Connecticut for whichever years use the other vintage.
+# Expanding every CT geoid to both vintages makes the filter list vintage-agnostic.
+CT_PLANNING_REGION_TO_COUNTIES = {
+    '09110': ['09003'],           # Capitol -> Hartford
+    '09120': ['09001'],           # Greater Bridgeport -> Fairfield
+    '09130': ['09007', '09011'],  # Lower Connecticut River Valley -> Middlesex, New London
+    '09140': ['09009', '09005'],  # Naugatuck Valley -> New Haven, Litchfield
+    '09150': ['09013', '09015'],  # Northeastern Connecticut -> Tolland, Windham
+    '09160': ['09005'],           # Northwest Hills -> Litchfield
+    '09170': ['09009', '09007'],  # South Central -> New Haven, Middlesex
+    '09180': ['09011'],           # Southeastern Connecticut -> New London
+    '09190': ['09001', '09005'],  # Western Connecticut -> Fairfield, Litchfield
+}
+CT_COUNTY_TO_PLANNING_REGIONS = {}
+for _region, _counties in CT_PLANNING_REGION_TO_COUNTIES.items():
+    for _county in _counties:
+        CT_COUNTY_TO_PLANNING_REGIONS.setdefault(_county, []).append(_region)
+
+
+def expand_connecticut_geoids(geoids: List[str]) -> List[str]:
+    """
+    Expand any Connecticut GEOID5 (state FIPS 09) to include its equivalent(s) in the
+    other vintage, so a single filter list matches Connecticut data regardless of which
+    vintage a given table uses. Non-Connecticut geoids pass through unchanged.
+    """
+    expanded = set()
+    for geoid in geoids:
+        geoid5 = str(geoid).zfill(5)
+        expanded.add(geoid5)
+        if geoid5 in CT_PLANNING_REGION_TO_COUNTIES:
+            expanded.update(CT_PLANNING_REGION_TO_COUNTIES[geoid5])
+        elif geoid5 in CT_COUNTY_TO_PLANNING_REGIONS:
+            expanded.update(CT_COUNTY_TO_PLANNING_REGIONS[geoid5])
+    return list(expanded)
+
 
 def map_counties_to_geoids(
     counties: Union[List[str], List[Dict[str, str]]]

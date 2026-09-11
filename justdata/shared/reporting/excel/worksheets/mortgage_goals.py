@@ -68,6 +68,7 @@ def _create_mortgage_goals_sheet(wb: Workbook, mortgage_goals_data: Dict, years_
         # Process by state
         states_data = mortgage_goals_data.get('by_state', {})
         grand_totals = mortgage_goals_data.get('grand_total', {})
+        num_years = len(years_hmda) if years_hmda else 2
 
         # Write Grand Total first
         metrics = ['Loans', '~LMICT', '~LMIB', 'LMIB$', '~MMCT', '~MINB',
@@ -92,9 +93,9 @@ def _create_mortgage_goals_sheet(wb: Workbook, mortgage_goals_data: Dict, years_
 
             # Goal values (computed) - uses multipliers from row 2
             # Multipliers: C2=1.1, D2=1.5, E2=1, G2=5, H2=5, I2=5, K2=5
-            hp_goal = ((hp_val or 0) / 2) * 1.1 * 5 if hp_val else 0
-            refi_goal = ((refi_val or 0) / 2) * 1.5 * 5 if refi_val else 0
-            hi_goal = ((hi_val or 0) / 2) * 1 * 5 if hi_val else 0
+            hp_goal = ((hp_val or 0) / num_years) * 1.1 * 5 if hp_val else 0
+            refi_goal = ((refi_val or 0) / num_years) * 1.5 * 5 if refi_val else 0
+            hi_goal = ((hi_val or 0) / num_years) * 1 * 5 if hi_val else 0
             ws.cell(row, 7, hp_goal)   # HP Goal
             ws.cell(row, 8, refi_goal)  # Refi Goal
             ws.cell(row, 9, hi_goal)   # HI Goal
@@ -102,7 +103,7 @@ def _create_mortgage_goals_sheet(wb: Workbook, mortgage_goals_data: Dict, years_
 
             # Baseline and Total Increase only for LMIB$ row
             if metric == 'LMIB$':
-                baseline = (total_val / 2) * 5 if total_val else 0
+                baseline = (total_val / num_years) * 5 if total_val else 0
                 ws.cell(row, 11, baseline)
                 ws.cell(row, 12, (hp_goal + refi_goal + hi_goal) - baseline)
 
@@ -135,16 +136,16 @@ def _create_mortgage_goals_sheet(wb: Workbook, mortgage_goals_data: Dict, years_
                 # Computed values using same multipliers as grand total
                 total_val = (hp_val or 0) + (refi_val or 0) + (hi_val or 0)
                 ws.cell(row, 6, total_val)
-                hp_goal = ((hp_val or 0) / 2) * 1.1 * 5 if hp_val else 0
-                refi_goal = ((refi_val or 0) / 2) * 1.5 * 5 if refi_val else 0
-                hi_goal = ((hi_val or 0) / 2) * 1 * 5 if hi_val else 0
+                hp_goal = ((hp_val or 0) / num_years) * 1.1 * 5 if hp_val else 0
+                refi_goal = ((refi_val or 0) / num_years) * 1.5 * 5 if refi_val else 0
+                hi_goal = ((hi_val or 0) / num_years) * 1 * 5 if hi_val else 0
                 ws.cell(row, 7, hp_goal)
                 ws.cell(row, 8, refi_goal)
                 ws.cell(row, 9, hi_goal)
                 ws.cell(row, 10, hp_goal + refi_goal + hi_goal)
 
                 if metric == 'LMIB$':
-                    baseline = (total_val / 2) * 5 if total_val else 0
+                    baseline = (total_val / num_years) * 5 if total_val else 0
                     ws.cell(row, 11, baseline)
                     ws.cell(row, 12, (hp_goal + refi_goal + hi_goal) - baseline)
 
